@@ -99,3 +99,7 @@ make test
 This runs the [mini.test](https://github.com/echasnovski/mini.nvim) suite headlessly (it clones mini.nvim into `.tests/` on first run). Tests that need the `blade` parser are skipped when it isn't installed.
 
 `scripts/bundle-directives.sh path/to/livewire.esm.js` lists the directives and modifiers a Livewire JS bundle handles. Use it to check `lua/livewire/catalog/directives.lua` against a new Livewire release. Point `LIVEWIRE_V4_BUNDLE` / `LIVEWIRE_V3_BUNDLE` at bundles to have `make test` do that check too.
+
+## License
+
+MIT
