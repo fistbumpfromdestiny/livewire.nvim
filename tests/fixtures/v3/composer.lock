@@ -1,0 +1,8 @@
+{
+    "packages": [
+        { "name": "laravel/framework", "version": "v11.44.0" }
+    ],
+    "packages-dev": [
+        { "name": "livewire/livewire", "version": "v3.6.4" }
+    ]
+}
