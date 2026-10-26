@@ -1,6 +1,8 @@
--- Warnings for `wire.` typos, unknown directives, sub-names and modifiers in Blade buffers.
+-- Warnings for `wire.` typos, unknown directives, sub-names and modifiers in Blade buffers,
+-- and for `wire:model` properties and action methods Livewire would reject.
 local catalog = require("livewire.catalog")
 local config = require("livewire.config")
+local members = require("livewire.members")
 local project = require("livewire.project")
 local util = require("livewire.util")
 
@@ -114,6 +116,89 @@ function M.check_attribute(attr, version, custom)
   return problems
 end
 
+---@param index livewire.Index
+local function component_label(index)
+  return index.name and ("`%s`"):format(index.name) or "this component"
+end
+
+local function names(list)
+  return vim.tbl_map(function(m)
+    return m.name
+  end, list)
+end
+
+local call_messages = {
+  not_public = "Method `%s` is %s on %s; Livewire can only call public methods.",
+  static = "Method `%s` is static on %s; Livewire can only call public, non-static methods.",
+  hook = "`%s` is a lifecycle hook; Livewire won't call it from the browser.",
+  render = "`%s` can't be called from the browser; use `$refresh` to re-render.",
+}
+
+--- Problem with the member an attribute value refers to. Offsets are 0-based byte ranges
+--- within `value`.
+---@param kind livewire.ValueKind
+---@param value string
+---@param index livewire.Index a complete index
+---@return { start: integer, finish: integer, message: string }?
+function M.check_value(kind, value, index)
+  local start, name, rest
+  if kind == "property" then
+    start, name = value:match("^%s*()([%a_][%w_]*)[%w_%.]*%s*$")
+  elseif kind == "action" then
+    start, name, rest = value:match("^%s*()([%a_][%w_]*)%s*(.-)%s*$")
+    if rest ~= "" and not (rest and rest:match("^%b()$")) then
+      name = nil
+    end
+  end
+  if not name then
+    return nil
+  end
+  local message
+  local label = component_label(index)
+  if kind == "property" then
+    local problem = members.set_problem(index, name)
+    if problem == "missing" then
+      local suggestion = util.suggest(name, names(members.properties(index)))
+      message = ("Property `%s` not found on %s."):format(name, label)
+        .. (suggestion and (" Did you mean `%s`?"):format(suggestion) or "")
+    elseif problem == "not_public" then
+      message = ("Property `%s` is %s on %s, so `wire:model` can't set it; Livewire only binds public properties."):format(
+        name,
+        index.members[name].visibility,
+        label
+      )
+    elseif problem == "static" then
+      message = ("Property `%s` is static on %s, so `wire:model` can't set it."):format(name, label)
+    end
+  else
+    local problem = members.call_problem(index, name)
+    if problem == "missing" then
+      local suggestion = util.suggest(name, names(members.methods(index)))
+      message = ("Method `%s` not found on %s."):format(name, label)
+        .. (suggestion and (" Did you mean `%s`?"):format(suggestion) or "")
+    elseif problem == "not_public" then
+      message = call_messages.not_public:format(name, index.members[name].visibility, label)
+    elseif problem == "static" then
+      message = call_messages.static:format(name, label)
+    elseif problem == "hook" or problem == "render" then
+      message = call_messages[problem]:format(name)
+    end
+  end
+  return message and { start = start - 1, finish = start - 1 + #name, message = message } or nil
+end
+
+--- The attribute_value node next to an attribute_name node.
+---@param name_node TSNode
+---@return TSNode?
+local function value_node(name_node)
+  local attribute = name_node:parent()
+  for child in (attribute and attribute:iter_children() or function() end) do
+    if child:type() == "quoted_attribute_value" then
+      return child:named_child(0)
+    end
+  end
+end
+
 --- Compute and set diagnostics for a buffer. Never raises.
 ---@param buf integer
 function M.refresh(buf)
@@ -130,20 +215,49 @@ function M.refresh(buf)
   local custom = project.custom_directives(buf)
   local tree = parser:parse()[1]
   local diagnostics = {}
+  local function add(row, col, problem)
+    diagnostics[#diagnostics + 1] = {
+      lnum = row,
+      col = col + problem.start,
+      end_lnum = row,
+      end_col = col + problem.finish,
+      severity = vim.diagnostic.severity.WARN,
+      source = "livewire",
+      message = problem.message,
+    }
+  end
+  -- member checks only when the whole class chain is known; looked up on first use
+  local index ---@type livewire.Index|false|nil
   for _, node in attribute_names():iter_captures(tree:root(), buf) do
     local text = vim.treesitter.get_node_text(node, buf)
     if text:sub(1, 5) == "wire:" or text:sub(1, 5) == "wire." then
       local row, col = node:start()
-      for _, problem in ipairs(M.check_attribute(text, version, custom)) do
-        diagnostics[#diagnostics + 1] = {
-          lnum = row,
-          col = col + problem.start,
-          end_lnum = row,
-          end_col = col + problem.finish,
-          severity = vim.diagnostic.severity.WARN,
-          source = "livewire",
-          message = problem.message,
-        }
+      local problems = M.check_attribute(text, version, custom)
+      for _, problem in ipairs(problems) do
+        add(row, col, problem)
+      end
+      local parsed = #problems == 0 and catalog.parse(text)
+      local resolved = parsed and catalog.resolve(parsed.name.text, version, custom)
+      local kind = resolved
+        and (resolved.kind == "directive" or resolved.kind == "event")
+        and catalog.value_kind(resolved, parsed.sub and parsed.sub.text)
+      local vnode = (kind == "property" or kind == "action") and value_node(node)
+      if vnode then
+        if index == nil then
+          index = members.for_buffer(buf) or false
+          index = index and index.complete and index
+        end
+        local value = vim.treesitter.get_node_text(vnode, buf)
+        local problem = index and M.check_value(kind, value, index)
+        if problem then
+          local vrow, vcol = vnode:start()
+          -- the name may sit on a later line of a multi-line value
+          local lines = vim.split(value:sub(1, problem.start), "\n", { plain = true })
+          if #lines > 1 then
+            vrow, vcol = vrow + #lines - 1, #lines[#lines] - problem.start
+          end
+          add(vrow, vcol, problem)
+        end
       end
     end
   end

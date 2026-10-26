@@ -56,6 +56,27 @@ for major, bundle in pairs({
   end
 end
 
+T["every listed v4 $wire magic is in the bundle"] = function()
+  local bundle = vim.env.LIVEWIRE_V4_BUNDLE or vim.fn.expand("~/Lerd/livewire/vendor/livewire/livewire/dist/livewire.esm.js")
+  if not vim.uv.fs_stat(bundle) then
+    MiniTest.skip("no Livewire 4 bundle (set LIVEWIRE_V4_BUNDLE)")
+  end
+  local out = vim.fn.system({ H.root .. "/scripts/bundle-directives.sh", bundle })
+  local defined = {}
+  for name in (out:match("== %$wire magic properties[^\n]*\n([^\n]*)") or ""):gmatch("%S+") do
+    defined[name] = true
+  end
+  eq(defined["$refresh"], true)
+  local magics = require("livewire.catalog.magics")
+  for _, m in ipairs(magics.for_version(magics.wire, 4)) do
+    eq({ m.name, defined[m.name] }, { m.name, true })
+  end
+  -- actions are $wire properties too, except $event (Alpine's)
+  for _, m in ipairs(magics.for_version(magics.actions, 4)) do
+    eq({ m.name, m.name == "$event" or defined[m.name] }, { m.name, true })
+  end
+end
+
 T["Alpine plugin directives are not wire: directives"] = function()
   for _, name in ipairs({ "anchor", "collapse", "mask", "trap", "resize", "data", "for", "if" }) do
     eq({ name, by_name[name] }, { name, nil })

@@ -70,6 +70,102 @@ T["custom_directives silences custom events"] = function()
   )
 end
 
+T["members"] = MiniTest.new_set({
+  hooks = {
+    pre_case = function()
+      H.skip_without_php()
+      require("livewire.components").reset()
+      require("livewire.members").reset()
+    end,
+  },
+})
+
+T["members"]["problems fixture"] = function()
+  eq(scan(open("app/resources/views/livewire/problems.blade.php")), {
+    { "nmae", "Property `nmae` not found on `Problems`. Did you mean `name`?" },
+    { "secret", "Property `secret` is protected on `Problems`, so `wire:model` can't set it; Livewire only binds public properties." },
+    { "instances", "Property `instances` is static on `Problems`, so `wire:model` can't set it." },
+    { "items", "Property `items` not found on `Problems`." },
+    { "changeGreting", "Method `changeGreting` not found on `Problems`. Did you mean `changeGreeting`?" },
+    { "mount", "`mount` is a lifecycle hook; Livewire won't call it from the browser." },
+    { "render", "`render` can't be called from the browser; use `$refresh` to re-render." },
+    { "guard", "Method `guard` is protected on `Problems`; Livewire can only call public methods." },
+    { "make", "Method `make` is static on `Problems`; Livewire can only call public, non-static methods." },
+    { "bootHasSearch", "`bootHasSearch` is a lifecycle hook; Livewire won't call it from the browser." },
+    { "updatedName", "`updatedName` is a lifecycle hook; Livewire won't call it from the browser." },
+    { "refreshStats", "Method `refreshStats` not found on `Problems`." },
+  })
+end
+
+T["members"]["valid views are clean"] = function()
+  for _, path in ipairs({
+    "app/resources/views/livewire/greeter.blade.php",
+    "app/resources/views/livewire/reports/monthly.blade.php",
+    "app/resources/views/components/⚡counter/counter.blade.php",
+  }) do
+    eq({ path, scan(open(path)) }, { path, {} })
+  end
+end
+
+T["members"]["single-file component"] = function()
+  eq(scan(open("app/resources/views/pages/⚡profile.blade.php")), {
+    { "sav", "Method `sav` not found on this component. Did you mean `save`?" },
+  })
+end
+
+T["members"]["unresolvable base class or no owner stays silent"] = function()
+  eq(scan(open("app/resources/views/livewire/broken.blade.php")), {})
+  local buf = open("app/resources/views/components/app-logo.blade.php")
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { '<button wire:click="anything" wire:model="nope">' })
+  eq(scan(buf), {})
+end
+
+T["members"]["multi-line value"] = function()
+  local buf = open("app/resources/views/livewire/greeter.blade.php")
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "<button wire:click=\"", "    savee", '">' })
+  eq(scan(buf), { { "savee", "Method `savee` not found on `Greeter`." } })
+end
+
+T["members"]["typo in the directive name skips the member check"] = function()
+  local buf = open("app/resources/views/livewire/greeter.blade.php")
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { '<input wire:modle="nope">' })
+  eq(#scan(buf), 1)
+end
+
+T["members"]["method added to the class clears the warning"] = function()
+  H.skip_without_blade()
+  local root = vim.fs.normalize(vim.fn.tempname())
+  vim.fn.system({ "cp", "-r", H.app, root })
+  require("livewire").setup({})
+  vim.cmd.edit(root .. "/resources/views/livewire/greeter.blade.php")
+  vim.bo.filetype = "blade"
+  local view = vim.api.nvim_get_current_buf()
+  vim.api.nvim_buf_set_lines(view, 0, -1, false, { '<button wire:click="archive">' })
+  eq(scan(view), { { "archive", "Method `archive` not found on `Greeter`." } })
+
+  vim.cmd.split(root .. "/app/Livewire/Greeter.php")
+  local at = vim.fn.search("use HasSearch;")
+  vim.api.nvim_buf_set_lines(0, at, at, false, { "    public function archive(): void {}" })
+  vim.cmd.write()
+  vim.wait(2000, function()
+    return #vim.diagnostic.get(view, { namespace = diagnostics.ns }) == 0
+  end)
+  eq(vim.diagnostic.get(view, { namespace = diagnostics.ns }), {})
+
+  -- a trait outside the class path: re-checked because the index read it
+  vim.api.nvim_buf_set_lines(view, 0, -1, false, { '<button wire:click="purge">' })
+  eq(scan(view), { { "purge", "Method `purge` not found on `Greeter`." } })
+  vim.cmd.edit(root .. "/app/Concerns/HasSearch.php")
+  local at = vim.fn.search("string $search")
+  vim.api.nvim_buf_set_lines(0, at, at, false, { "    public function purge(): void {}" })
+  vim.cmd.write()
+  vim.wait(2000, function()
+    return #vim.diagnostic.get(view, { namespace = diagnostics.ns }) == 0
+  end)
+  eq(vim.diagnostic.get(view, { namespace = diagnostics.ns }), {})
+  vim.fn.delete(root, "rf")
+end
+
 T["check_attribute"] = MiniTest.new_set()
 
 T["check_attribute"]["sub-name on a directive without sub-names"] = function()

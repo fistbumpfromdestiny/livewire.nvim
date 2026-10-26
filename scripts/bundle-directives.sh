@@ -48,3 +48,6 @@ awk '
   }
   END { for (s in mods) print s ":" mods[s] }
 ' <<<"$normalized" | sort
+
+section "\$wire magic properties: wireProperty(\"\$…\")"
+grep -oE 'wireProperty\("\$[A-Za-z]+"' <<<"$normalized" | sed -E 's/.*\("//; s/"$//' | sort -u | paste -sd' '

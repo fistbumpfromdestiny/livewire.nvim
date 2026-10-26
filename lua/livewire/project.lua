@@ -154,9 +154,18 @@ local function changed(root)
 end
 
 --- Called after a file is written: re-scan custom directives when it is one of a known
---- project's scanned files, and announce version/directive changes.
+--- project's scanned files, forget component owners when a class changes, and announce
+--- version, directive and component changes (including writes to any PHP file a member
+--- index has read).
 ---@param path string absolute path
 function M.on_write(path)
+  local php_root = path:match("%.php$") and vim.fs.root(path, markers)
+  if php_root then
+    local owners_changed = require("livewire.components").on_write(php_root, path:sub(#php_root + 2))
+    if owners_changed or require("livewire.members").seen[path] then
+      changed(php_root)
+    end
+  end
   for root, p in pairs(cache) do
     local rel = vim.startswith(path, root .. "/") and path:sub(#root + 2)
     if rel == "composer.lock" then

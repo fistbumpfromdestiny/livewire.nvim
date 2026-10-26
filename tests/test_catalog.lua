@@ -183,4 +183,32 @@ T["parse"] = function()
   eq(catalog.parse("wire:model.").modifiers, { { text = "", start = 11 } })
 end
 
+T["value kinds"] = MiniTest.new_set()
+
+T["value kinds"]["per directive"] = function()
+  local function kind(name, sub, custom)
+    return catalog.value_kind(catalog.resolve(name, 4, custom), sub)
+  end
+  eq(kind("model"), "property")
+  eq(kind("click"), "action")
+  eq(kind("keydown"), "action")
+  eq(kind("trix-change"), "action")
+  eq(kind("target"), "targets")
+  eq(kind("show"), "expression")
+  eq(kind("key"), "none")
+  eq(kind("loading"), "none")
+  eq(kind("sort"), "action")
+  eq(kind("sort", "item"), "none")
+  eq(kind("sort", "config"), "expression")
+  eq(kind("intersect", "leave"), "action")
+  eq(kind("tooltip", nil, { tooltip = true }), "none")
+end
+
+T["value kinds"]["every directive has one"] = function()
+  local valid = { property = true, action = true, targets = true, expression = true, none = true }
+  for _, d in ipairs(require("livewire.catalog.directives")) do
+    eq({ d.name, valid[d.value] }, { d.name, true })
+  end
+end
+
 return T

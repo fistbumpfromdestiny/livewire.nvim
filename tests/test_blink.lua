@@ -19,7 +19,12 @@ local T = MiniTest.new_set({
 local function buffer(lines, opts)
   opts = opts or {}
   local buf = vim.api.nvim_create_buf(true, false)
-  vim.api.nvim_buf_set_name(buf, ("%s/%s/resources/views/test-%d.blade.php"):format(H.fixtures, opts.project or "v4", buf))
+  local name = opts.path and ("%s/%s"):format(H.app, opts.path)
+    or ("%s/%s/resources/views/test-%d.blade.php"):format(H.fixtures, opts.project or "v4", buf)
+  if vim.fn.bufexists(name) == 1 then
+    vim.api.nvim_buf_delete(vim.fn.bufnr(name), { force = true })
+  end
+  vim.api.nvim_buf_set_name(buf, name)
   local row, col
   for i, l in ipairs(lines) do
     local c = l:find("|", 1, true)
@@ -143,13 +148,95 @@ end
 T["get_completions calls back with the blink response shape"] = function()
   local buf, row, col = buffer({ "<input wire:|" })
   local s = source.new({})
-  eq(s:get_trigger_characters(), { ":", "." })
+  eq(s:get_trigger_characters(), { ":", ".", '"', "'", "(" })
   local response
   s:get_completions({ bufnr = buf, cursor = { row + 1, col } }, function(r)
     response = r
   end)
   eq(response.is_incomplete_forward, false)
   eq(#response.items > 10, true)
+end
+
+T["members"] = MiniTest.new_set({
+  hooks = {
+    pre_case = function()
+      H.skip_without_php()
+      require("livewire.components").reset()
+      require("livewire.members").reset()
+      vim.cmd("silent! %bwipeout!")
+    end,
+  },
+})
+
+local greeter = { path = "resources/views/livewire/greeter.blade.php" }
+local logo = { path = "resources/views/components/app-logo.blade.php" }
+
+T["members"]["properties in wire:model"] = function()
+  local l = labels({ '<input wire:model="|">' }, greeter)
+  has(l, { "name", "greeting", "greetingMessage", "form", "open", "search", "sortField" }, true)
+  has(l, { "secret", "instances", "changeGreeting", "$refresh" }, false)
+end
+
+T["members"]["Form object properties"] = function()
+  eq(labels({ '<input wire:model.live="form.|">' }, greeter), { "body", "title" })
+end
+
+T["members"]["methods and magic actions in action directives"] = function()
+  for _, attr in ipairs({ "wire:click", "wire:submit.prevent", "wire:keydown.enter", "wire:poll.5s", "wire:init" }) do
+    local l = labels({ ("<button %s=\"|\">"):format(attr) }, greeter)
+    has(l, { "changeGreeting", "clearSearch", "sortBy", "$refresh", "$toggle", "$dispatch" }, true)
+    has(l, { "mount", "guard", "render", "make", "updatedName", "bootHasSearch", "name" }, false)
+  end
+end
+
+T["members"]["properties inside $toggle and $set"] = function()
+  has(labels({ "<button wire:click=\"$toggle('|')\">" }, greeter), { "open", "name" }, true)
+  has(labels({ "<button wire:click=\"$set('|', 1)\">" }, greeter), { "open" }, true)
+  has(labels({ "<button wire:click=\"$set('|', 1)\">" }, greeter), { "changeGreeting" }, false)
+end
+
+T["members"]["wire:target entries"] = function()
+  local l = labels({ '<span wire:target="changeGreeting, |">' }, greeter)
+  has(l, { "name", "sortBy", "changeGreeting" }, true)
+end
+
+T["members"]["after $wire."] = function()
+  local l = labels({ '<div x-on:click="$wire.|">' }, greeter)
+  has(l, { "changeGreeting", "name", "$refresh", "$get", "$island" }, true)
+  has(l, { "mount", "secret" }, false)
+end
+
+T["members"]["single-file component"] = function()
+  has(labels({ "<?php", "new class extends Livewire\\Component {", "    public function save() {}", "}; ?>", '<button wire:click="|">' }, {
+    path = "resources/views/pages/⚡scratch.blade.php",
+  }), { "save", "$refresh" }, true)
+end
+
+T["members"]["no owner: magic only, and nothing for properties"] = function()
+  eq(labels({ '<input wire:model="|">' }, logo), {})
+  local l = labels({ '<button wire:click="|">' }, logo)
+  has(l, { "$refresh" }, true)
+  eq(vim.tbl_filter(function(x)
+    return x:sub(1, 1) ~= "$"
+  end, l), {})
+end
+
+T["members"]["non-member values get nothing"] = function()
+  for _, attr in ipairs({ "wire:key", "wire:loading.class", "wire:confirm", "wire:navigate", "wire:ref", "wire:sort:item" }) do
+    eq({ attr, labels({ ("<div %s=\"|\">"):format(attr) }, greeter) }, { attr, {} })
+  end
+end
+
+T["members"]["documentation and replacing the partial"] = function()
+  local buf, row, col = buffer({ '<input wire:model="na|">' }, greeter)
+  local name = vim.iter(source.items(buf, row, col)):find(function(i)
+    return i.label == "name"
+  end)
+  eq(name.documentation.value:find("public string $name", 1, true) ~= nil, true)
+  eq(name.documentation.value:find("app/Livewire/Greeter.php", 1, true) ~= nil, true)
+  eq(name.kind, vim.lsp.protocol.CompletionItemKind.Field)
+  vim.lsp.util.apply_text_edits({ name.textEdit }, buf, "utf-16")
+  eq(vim.api.nvim_buf_get_lines(buf, 0, -1, false), { '<input wire:model="name">' })
 end
 
 return T

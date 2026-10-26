@@ -1,0 +1,6 @@
+{
+    "packages": [
+        { "name": "livewire/livewire", "version": "v4.4.8" }
+    ],
+    "packages-dev": []
+}

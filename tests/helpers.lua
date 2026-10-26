@@ -15,4 +15,19 @@ function H.skip_without_blade()
   end
 end
 
+function H.has_php()
+  local ok, added = pcall(vim.treesitter.language.add, "php")
+  return ok and added == true
+end
+
+--- Skip the current case when the php parser isn't installed.
+function H.skip_without_php()
+  if not H.has_php() then
+    MiniTest.skip("tree-sitter `php` parser not installed")
+  end
+end
+
+--- The fixture Livewire 4 project used by component and member tests.
+H.app = H.fixtures .. "/app"
+
 return H

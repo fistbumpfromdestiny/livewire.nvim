@@ -17,15 +17,19 @@
 ---@field arg? livewire.ArgKind Kind of the optional segment(s) following this modifier
 ---@field arg_max? integer How many argument segments may follow (default 1)
 
+---@alias livewire.ValueKind "property"|"action"|"targets"|"expression"|"none"
+
 ---@class livewire.Subname
 ---@field name string
 ---@field versions integer[]
 ---@field desc string
+---@field value? livewire.ValueKind Overrides the directive's value kind for this sub-name
 
 ---@class livewire.Directive
 ---@field name string
 ---@field versions integer[]
 ---@field desc string
+---@field value livewire.ValueKind What the attribute value refers to (a component property, an action, ...)
 ---@field docs string|table<integer, string>
 ---@field modifiers livewire.Modifier[]
 ---@field subnames? livewire.Subname[]|"any"
@@ -63,6 +67,7 @@ local delay_levels = { "shortest", "shorter", "short", "default", "long", "longe
 return {
   {
     name = "model",
+    value = "property",
     versions = both,
     desc = "Bind an input's value to a component property",
     docs = "wire-model",
@@ -86,6 +91,7 @@ return {
   },
   {
     name = "loading",
+    value = "none",
     versions = both,
     desc = "Show or change the element while a network request is in flight",
     docs = "wire-loading",
@@ -95,6 +101,7 @@ return {
   },
   {
     name = "target",
+    value = "targets",
     versions = both,
     desc = "Limit `wire:loading` to specific actions or properties",
     docs = { [3] = "wire-loading#targeting-specific-actions", [4] = "wire-loading#targeting-specific-actions" },
@@ -102,6 +109,7 @@ return {
   },
   {
     name = "dirty",
+    value = "none",
     versions = both,
     desc = "Show or change the element while client state differs from the server",
     docs = "wire-dirty",
@@ -109,6 +117,7 @@ return {
   },
   {
     name = "offline",
+    value = "none",
     versions = both,
     desc = "Show or change the element while the browser is offline",
     docs = "wire-offline",
@@ -116,6 +125,7 @@ return {
   },
   {
     name = "poll",
+    value = "action",
     versions = both,
     desc = "Refresh the component, or call a method, on an interval (default 2.5s)",
     docs = "wire-poll",
@@ -127,6 +137,7 @@ return {
   },
   {
     name = "init",
+    value = "action",
     versions = both,
     desc = "Call a method as soon as the component is rendered on the page",
     docs = "wire-init",
@@ -134,6 +145,7 @@ return {
   },
   {
     name = "confirm",
+    value = "none",
     versions = both,
     desc = "Ask the user to confirm before running the action",
     docs = "wire-confirm",
@@ -141,6 +153,7 @@ return {
   },
   {
     name = "navigate",
+    value = "none",
     versions = both,
     desc = "Load the link's page with SPA-style navigation",
     docs = "wire-navigate",
@@ -154,6 +167,7 @@ return {
   },
   {
     name = "scroll",
+    value = "none",
     versions = v3,
     desc = "Preserve this element's scroll position across page visits",
     docs = { [3] = "navigate#preserving-scroll-position" },
@@ -161,6 +175,7 @@ return {
   },
   {
     name = "current",
+    value = "none",
     versions = both,
     desc = "Add the classes in the value when the link points to the current page",
     docs = "wire-current",
@@ -172,6 +187,7 @@ return {
   },
   {
     name = "ignore",
+    value = "none",
     versions = both,
     desc = "Keep Livewire from updating this element and its children",
     docs = "wire-ignore",
@@ -182,6 +198,7 @@ return {
   },
   {
     name = "replace",
+    value = "none",
     versions = both,
     desc = "Replace children on update instead of morphing them",
     docs = "wire-replace",
@@ -189,6 +206,7 @@ return {
   },
   {
     name = "cloak",
+    value = "none",
     versions = both,
     desc = "Hide the element until Livewire has initialised",
     docs = "wire-cloak",
@@ -196,6 +214,7 @@ return {
   },
   {
     name = "key",
+    value = "none",
     versions = both,
     desc = "Give the element a stable identity for DOM diffing (use in loops)",
     docs = { [3] = "components#adding-wirekey-to-foreach-loops", [4] = "troubleshooting#adding-wirekey" },
@@ -203,6 +222,7 @@ return {
   },
   {
     name = "stream",
+    value = "none",
     versions = both,
     desc = "Receive content streamed from the server with `$this->stream()`",
     docs = "wire-stream",
@@ -210,6 +230,7 @@ return {
   },
   {
     name = "transition",
+    value = "none",
     versions = both,
     desc = "Animate the element when it is shown, hidden or changed",
     docs = "wire-transition",
@@ -226,6 +247,7 @@ return {
   },
   {
     name = "show",
+    value = "expression",
     versions = both,
     desc = "Toggle the element's visibility from a component expression, without a request",
     docs = "wire-show",
@@ -233,6 +255,7 @@ return {
   },
   {
     name = "text",
+    value = "expression",
     versions = both,
     desc = "Set the element's text from a component expression, without a request",
     docs = "wire-text",
@@ -240,6 +263,7 @@ return {
   },
   {
     name = "bind",
+    value = "expression",
     versions = v4,
     desc = "Bind an HTML attribute to a component expression: `wire:bind:<attribute>`",
     docs = "wire-bind",
@@ -248,6 +272,7 @@ return {
   },
   {
     name = "ref",
+    value = "none",
     versions = v4,
     desc = "Name the element (or child component) so it can be targeted with `$refs`",
     docs = "wire-ref",
@@ -255,6 +280,7 @@ return {
   },
   {
     name = "island",
+    value = "none",
     versions = v4,
     desc = "Scope this element's action to the named island",
     docs = "islands",
@@ -265,6 +291,7 @@ return {
   },
   {
     name = "intersect",
+    value = "action",
     versions = v4,
     desc = "Call an action when the element enters (or leaves) the viewport",
     docs = "wire-intersect",
@@ -287,6 +314,7 @@ return {
   },
   {
     name = "sort",
+    value = "action",
     versions = v4,
     desc = "Make children drag-and-drop sortable and call a method with the new order",
     docs = "wire-sort",
@@ -297,12 +325,12 @@ return {
       mod("append", v4, "Append the island's new content"),
     },
     subnames = {
-      { name = "item", versions = v4, desc = "Mark a sortable item; the value is its key" },
-      { name = "handle", versions = v4, desc = "Only allow dragging by this handle" },
-      { name = "ignore", versions = v4, desc = "Don't start a drag from this element" },
-      { name = "group", versions = v4, desc = "Allow dragging between lists in the same group" },
-      { name = "group-id", versions = v4, desc = "Identify this list within its group" },
-      { name = "config", versions = v4, desc = "Pass SortableJS options" },
+      { name = "item", versions = v4, desc = "Mark a sortable item; the value is its key", value = "none" },
+      { name = "handle", versions = v4, desc = "Only allow dragging by this handle", value = "none" },
+      { name = "ignore", versions = v4, desc = "Don't start a drag from this element", value = "none" },
+      { name = "group", versions = v4, desc = "Allow dragging between lists in the same group", value = "none" },
+      { name = "group-id", versions = v4, desc = "Identify this list within its group", value = "none" },
+      { name = "config", versions = v4, desc = "Pass SortableJS options", value = "expression" },
     },
   },
 }

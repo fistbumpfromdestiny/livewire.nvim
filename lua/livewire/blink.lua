@@ -1,10 +1,14 @@
--- blink.cmp (v1) source: `wire:` directive names, sub-names and modifiers in Blade files.
+-- blink.cmp (v1) source: `wire:` directive names, sub-names and modifiers, and component
+-- members inside `wire:` values and after `$wire.`, in Blade files.
 --
 --   sources.providers.livewire = { name = "Livewire", module = "livewire.blink" }
 local catalog = require("livewire.catalog")
 local context = require("livewire.context")
 local events = require("livewire.catalog.events")
+local magics = require("livewire.catalog.magics")
+local members = require("livewire.members")
 local project = require("livewire.project")
+local value_context = require("livewire.value_context")
 
 local Kind = vim.lsp.protocol.CompletionItemKind
 
@@ -20,7 +24,7 @@ function source:enabled()
 end
 
 function source:get_trigger_characters()
-  return { ":", "." }
+  return { ":", ".", '"', "'", "(" }
 end
 
 ---@param ctx livewire.Context
@@ -121,7 +125,82 @@ local function modifier_items(ctx, row, col, resolved, version)
   return items
 end
 
---- Items for the cursor position; exposed for tests.
+local member_kinds = { property = Kind.Field, method = Kind.Method }
+
+---@param m livewire.Member
+---@param root string
+local function member_doc(m, root)
+  local file = vim.startswith(m.file, root .. "/") and m.file:sub(#root + 2) or m.file
+  return ("```php\n%s\n```\n\n%s"):format(m.detail, file)
+end
+
+---@param list livewire.Member[]
+---@param seen table<string, true>
+local function member_items(ctx, row, col, list, root, seen)
+  local items = {}
+  for _, m in ipairs(list) do
+    if not seen[m.name] then
+      seen[m.name] = true
+      items[#items + 1] = item(ctx, row, col, m.name, member_kinds[m.kind], member_doc(m, root), 1)
+    end
+  end
+  return items
+end
+
+---@param list livewire.Magic[]
+local function magic_items(ctx, row, col, list, version)
+  return vim.tbl_map(function(m)
+    return item(ctx, row, col, m.name, Kind.Function, m.desc, 2)
+  end, magics.for_version(list, version))
+end
+
+--- Items inside a `wire:` value or after `$wire.`.
+---@param vctx livewire.ValueContext|livewire.WireContext
+local function value_items(buf, row, col, vctx, version)
+  local index = members.for_buffer(buf)
+  local seen, items = {}, {}
+  local function add(list)
+    vim.list_extend(items, list)
+  end
+
+  if vctx.kind == "wire" then
+    local ctx = { start_col = vctx.start_col }
+    if index then
+      add(member_items(ctx, row, col, members.properties(index), index.root, seen))
+      add(member_items(ctx, row, col, members.methods(index), index.root, seen))
+    end
+    add(magic_items(ctx, row, col, magics.wire, version))
+    return items
+  end
+
+  local resolved = catalog.resolve(vctx.directive, version, project.custom_directives(buf))
+  local typing = value_context.typing(vctx, catalog.value_kind(resolved, vctx.sub))
+  if not typing then
+    return {}
+  end
+  local ctx = { start_col = col - #typing.partial }
+  if typing.want == "action" then
+    if index then
+      add(member_items(ctx, row, col, members.methods(index), index.root, seen))
+    end
+    add(magic_items(ctx, row, col, magics.actions, version))
+  elseif not index then
+    return {}
+  elseif typing.want == "property" or typing.want == "argument_property" then
+    add(member_items(ctx, row, col, members.properties(index), index.root, seen))
+  elseif typing.want == "form_property" then
+    local form = members.form_index(index, typing.form)
+    if form then
+      add(member_items(ctx, row, col, members.properties(form), index.root, seen))
+    end
+  elseif typing.want == "member" then
+    add(member_items(ctx, row, col, members.properties(index), index.root, seen))
+    add(member_items(ctx, row, col, members.methods(index), index.root, seen))
+  end
+  return items
+end
+
+--- Items for the cursor position; exposed for tests and the nvim-cmp source.
 ---@param buf integer
 ---@param row integer 0-based
 ---@param col integer 0-based
@@ -130,10 +209,11 @@ function source.items(buf, row, col)
     return {}
   end
   local ctx = context.at(buf, row, col)
-  if not ctx then
-    return {}
-  end
   local version = project.version(buf)
+  if not ctx then
+    local vctx = value_context.at(buf, row, col)
+    return vctx and value_items(buf, row, col, vctx, version) or {}
+  end
   local custom = project.custom_directives(buf)
   if ctx.kind == "directive" then
     return directive_items(ctx, row, col, version, custom)

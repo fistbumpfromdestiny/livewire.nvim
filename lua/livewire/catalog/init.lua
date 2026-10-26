@@ -147,6 +147,28 @@ function M.modifiers(resolved, version)
     end, mods)
 end
 
+--- What the value of `wire:<name>[:<sub>]` refers to. Unknown names are forwarded to Alpine
+--- as event listeners, so like events their value is an action.
+---@param resolved livewire.Resolved
+---@param sub? string
+---@return livewire.ValueKind
+function M.value_kind(resolved, sub)
+  if resolved.kind == "event" or resolved.kind == "unknown" then
+    return "action"
+  elseif not resolved.directive or resolved.kind ~= "directive" then
+    return "none"
+  end
+  local d = resolved.directive
+  if sub and type(d.subnames) == "table" then
+    for _, s in ipairs(d.subnames --[[@as livewire.Subname[] ]]) do
+      if s.name == sub then
+        return s.value or d.value
+      end
+    end
+  end
+  return d.value
+end
+
 local arg_patterns = {
   ms = { "^%d+$", "^%d+ms$" },
   duration = { "^%d+ms$", "^%d+s$", "^%d+m$" },
